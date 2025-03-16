@@ -1,0 +1,11 @@
+Flask
+Flask-Cors
+Flask-SocketIO
+eventlet
+psutil
+passlib
+werkzeug
+requests
+Flask-cors
+zipfile36
+python-telegram-bot
