@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cyberpunk Hosting</title>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        body {
+            background: #0a0a0a;
+            color: #ff1744;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .container {
+            background: rgba(15, 15, 15, 0.95);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(255, 23, 68, 0.6);
+            width: 600px;
+            text-align: center;
+            border: 2px solid #ff1744;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            text-shadow: 0 0 8px #ff1744;
+        }
+
+        #user-id {
+            font-size: 14px;
+            color: #ff8e8e;
+            background: rgba(255, 23, 68, 0.1);
+            padding: 5px;
+            border-radius: 5px;
+            display: inline-block;
+            margin-bottom: 10px;
+        }
+
+        .terminal {
+    background: rgba(20, 20, 20, 0.95);
+    border: 2px solid #ff1744;
+    border-radius: 5px;
+    padding: 10px;
+    height: 400px;
+    width: 100%; /* Make it flexible */
+    max-width: 100%; /* Prevent horizontal overflow */
+    overflow-y: auto;
+    overflow-x: hidden; /* Ensure no horizontal scrolling */
+    box-shadow: inset 0 0 15px rgba(255, 23, 68, 0.3);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}        
+
+#terminal-output {
+    font-family: monospace;
+    color: #ff8e8e;
+    text-align: left;
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 5px;
+    white-space: pre-wrap; /* Ensure text wraps */
+    word-wrap: break-word; /* Break long words */
+    overflow-wrap: break-word; /* Extra support for word breaking */
+    max-width: 100%; /* Prevent it from exceeding container width */
+}
+
+/* iOS Fix: Ensure input doesn't get stuck */
+
+        .input-container {
+    display: flex;
+    width: 100%;
+    gap: 5px;
+    margin-top: 5px;
+    flex-wrap: wrap; /* Allow input to wrap if needed */
+}
+
+        #terminal-input {
+    flex-grow: 1;
+    padding: 10px;
+    font-size: 16px;
+    color: #ff1744;
+    background: #111;
+    border: 2px solid #ff1744;
+    border-radius: 5px;
+    outline: none;
+    box-shadow: 0 0 10px rgba(255, 23, 68, 0.4);
+    width: 100%; /* Ensure it fills available space */
+    max-width: 100%;
+}
+
+        #send-btn {
+            background: #ff1744;
+            color: #fff;
+            border: none;
+            padding: 10px 15px;
+            font-size: 14px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: 0.3s ease-in-out;
+            box-shadow: 0 0 10px rgba(255, 23, 68, 0.5);
+        }
+
+        #send-btn:hover {
+            background: #ff002f;
+            box-shadow: 0 0 15px rgba(255, 23, 68, 0.8);
+            transform: scale(1.05);
+        }
+
+        .server-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            background: rgba(255, 23, 68, 0.1);
+            width: 100%;
+        }
+
+        .server-stats div {
+            padding: 5px;
+            border-radius: 5px;
+            background: rgba(255, 23, 68, 0.2);
+            text-shadow: 0 0 5px rgba(255, 23, 68, 0.5);
+        }
+
+        .buttons {
+            margin-top: 15px;
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+        }
+
+        button {
+            background: #ff1744;
+            color: #fff;
+            border: none;
+            padding: 10px 15px;
+            font-size: 14px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: 0.3s ease-in-out;
+            box-shadow: 0 0 10px rgba(255, 23, 68, 0.5);
+            width: 48%;
+        }
+
+        button:hover {
+            background: #ff002f;
+            box-shadow: 0 0 15px rgba(255, 23, 68, 0.8);
+            transform: scale(1.05);
+        }
+
+        .command {
+            color: #ff1744;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Reiker Hosting Terminal</h1>
+        <p id="user-id">User ID: Guest</p>
+
+        <div class="terminal">
+            <div id="terminal-output"></div>
+            <div class="input-container">
+                <input type="text" id="terminal-input" placeholder="Enter command..." autofocus>
+                <button id="send-btn" onclick="sendCommand()">Send</button>
+            </div>
+        </div>
+
+        <div class="server-stats">
+            <div>CPU: <span id="cpu-usage">0%</span></div>
+            <div>RAM: <span id="ram-usage">0GB</span></div>
+            <div>Disk: <span id="disk-usage">0GB</span></div>
+            <div>Uptime: <span id="uptime">0h 0m</span></div>
+        </div>
+
+        <div class="buttons">
+            <button onclick="openFiles()">Files</button>
+            <button onclick="goToSettings()">Stop</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+    const socket = io();
+
+    document.getElementById("terminal-input").addEventListener("keypress", function (event) {
+    if (event.key === "Enter" || event.keyCode === 13) {
+        event.preventDefault(); // Prevent unintended form submissions
+        sendCommand();
+    }
+});
+
+// iOS "Done" Button Fix
+document.getElementById("terminal-input").addEventListener("blur", function () {
+    if (this.value.trim() !== "") {
+        sendCommand();
+    }
+});
+
+    function sendCommand() {
+        const inputField = document.getElementById("terminal-input");
+        const command = inputField.value.trim();
+        if (command) {
+            printCommand(command);
+            socket.emit("command", { command });
+
+            // Clear input field and placeholder
+            inputField.value = "";
+            inputField.placeholder = "";
+        }
+    }
+
+    function printCommand(command) {
+    const outputDiv = document.getElementById("terminal-output");
+    outputDiv.innerHTML += `<pre class="command" style="white-space: pre-wrap; word-break: break-word;">> ${command}</pre>`;
+    outputDiv.scrollTop = outputDiv.scrollHeight;
+}
+
+socket.on("output", (data) => {
+    const outputDiv = document.getElementById("terminal-output");
+
+    // Split the output into lines, ensuring they don't stretch
+    const lines = data.response.split('\n');
+    lines.forEach(line => {
+        outputDiv.innerHTML += `<pre style="white-space: pre-wrap; word-break: break-word;">${line}</pre>`;
+    });
+
+    outputDiv.scrollTop = outputDiv.scrollHeight;
+
+    // Save command output in local storage
+    saveCommandHistory(data.response);
+});
+
+    function fetchStatsAndUpdates() {
+    fetch("/stats")
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById("cpu-usage").textContent = data.cpu;
+            document.getElementById("ram-usage").textContent = data.ram;
+            document.getElementById("disk-usage").textContent = data.disk;
+            document.getElementById("uptime").textContent = data.uptime;
+        })
+        .catch(error => console.error("Error fetching stats:", error));
+}
+
+    // Save command output in local storage
+    function saveCommandHistory(entry) {
+        let history = JSON.parse(localStorage.getItem("commandHistory")) || [];
+        history.push(entry);
+        localStorage.setItem("commandHistory", JSON.stringify(history));
+    }
+
+    // Load previous updates on page load
+    function loadCommandHistory() {
+    const outputDiv = document.getElementById("terminal-output");
+    let history = JSON.parse(localStorage.getItem("commandHistory")) || [];
+    history.forEach(entry => {
+        outputDiv.innerHTML += `<pre style="white-space: pre-wrap; word-break: break-word;">${entry}</pre>`;
+    });
+    outputDiv.scrollTop = outputDiv.scrollHeight;
+}
+
+// Load updates when page loads
+window.onload = function () {
+    loadCommandHistory();
+    setInterval(fetchStatsAndUpdates, 5000);
+};
+
+    setInterval(fetchStatsAndUpdates, 5000);
+
+    function openFiles() {
+    window.location.href = "/myfiles"; // Redirect to /myfiles
+}
+
+    function stopCommand() {
+    console.log("Stopping command for session ID:", socket.id);  // Debug log
+    socket.emit("stop", { session_id: socket.id });  
+    alert("Stopping running command...");
+}
+</script>
+</body>
+</html>
