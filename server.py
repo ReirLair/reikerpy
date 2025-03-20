@@ -69,10 +69,24 @@ def serve_file():
     return send_from_directory("static", "file.html")
 
 processes = {}  # Store running processes per session
+process_lock = threading.Lock()  # Prevents race conditions
+LOG_FILE = "/tmp/process_log.txt"  # Persistent log for debugging
+def log_message(message):
+    """Write logs for debugging process issues."""
+    with open(LOG_FILE, "a") as f:
+        f.write(f"{message}\n")
+
+def cleanup_zombie_processes():
+    """Ensure no orphaned or zombie processes linger."""
+    with process_lock:
+        for sid, process in list(processes.items()):
+            if process.poll() is not None:  # Process ended unexpectedly
+                log_message(f"Cleaning up zombie process {sid}")
+                del processes[sid]
 
 @socketio.on('command')
 def handle_command(data):
-    """Execute only whitelisted commands in /home directory with input handling."""
+    """Executes only whitelisted commands and ensures they persist."""
     full_command = data.get("command", "").strip()
     base_command = full_command.split(" ")[0]
 
@@ -80,9 +94,10 @@ def handle_command(data):
         socketio.emit("output", {"response": f"ERROR: Command '{base_command}' is not allowed."}, room=request.sid)
         return
 
-    if request.sid in processes:
-        socketio.emit("output", {"response": "ERROR: Another command is already running. Wait until it finishes."}, room=request.sid)
-        return
+    with process_lock:
+        if request.sid in processes:
+            socketio.emit("output", {"response": "ERROR: Another command is already running. Wait until it finishes."}, room=request.sid)
+            return
 
     socketio.emit("command_started", room=request.sid)  # Notify frontend
 
@@ -94,13 +109,17 @@ def handle_command(data):
                 cwd=HOME_DIR,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                stdin=subprocess.PIPE,  # Enable input handling
+                stdin=subprocess.PIPE,
                 universal_newlines=True,
                 bufsize=1,
                 env={**os.environ, "PYTHONUNBUFFERED": "1"},
                 start_new_session=True
             )
-            processes[sid] = process
+
+            with process_lock:
+                processes[sid] = process
+
+            log_message(f"Started process {process.pid} for session {sid}")
 
             # Read stdout and stderr without blocking
             while process.poll() is None:
@@ -109,35 +128,28 @@ def handle_command(data):
                 for stream in read_fds:
                     line = stream.readline().strip()
                     if line:
-                        if stream == process.stdout:
-                            socketio.emit("output", {"response": line}, room=sid)
-                        else:
-                            socketio.emit("output", {"response": f"ERROR: {line}"}, room=sid)
+                        socketio.emit("output", {"response": line}, room=sid)
 
                 socketio.sleep(0.1)
 
-            # Read remaining output after process ends
+            # Read remaining output
             for stream in (process.stdout, process.stderr):
                 for line in stream:
                     line = line.strip()
                     if line:
-                        if stream == process.stdout:
-                            socketio.emit("output", {"response": line}, room=sid)
-                        else:
-                            socketio.emit("output", {"response": f"ERROR: {line}"}, room=sid)
+                        socketio.emit("output", {"response": line}, room=sid)
 
-            process.stdout.close()
-            process.stderr.close()
-            process.stdin.close()
+            log_message(f"Process {process.pid} for session {sid} ended")
 
         except Exception as e:
-            socketio.emit("output", {"response": f"Error executing command: {str(e)}"}, room=sid)
+            socketio.emit("output", {"response": f"ERROR: {str(e)}"}, room=sid)
+            log_message(f"Error executing command for {sid}: {str(e)}")
 
         finally:
-            processes.pop(sid, None)
+            with process_lock:
+                processes.pop(sid, None)
             socketio.emit("command_ended", room=sid)  # Notify frontend
 
-    # ✅ Use `start_background_task()` so Flask doesn't freeze
     socketio.start_background_task(run_command, request.sid)
 
 @socketio.on('input')
@@ -148,54 +160,75 @@ def handle_input(data):
     if not input_text:
         return  # Ignore empty input
 
-    if not processes:
-        socketio.emit("output", {"response": "ERROR: No running process to send input to."})
-        return
+    with process_lock:
+        if not processes:
+            socketio.emit("output", {"response": "ERROR: No running process to send input to."})
+            return
 
-    for process in processes.values():  # Send input to all running processes
-        if process.poll() is None:  # If still running
-            try:
-                process.stdin.write(input_text + "\n")
-                process.stdin.flush()
-            except Exception as e:
-                socketio.emit("output", {"response": f"ERROR: Failed to send input: {str(e)}"})
+        for process in processes.values():
+            if process.poll() is None:  # If still running
+                try:
+                    process.stdin.write(input_text + "\n")
+                    process.stdin.flush()
+                except Exception as e:
+                    socketio.emit("output", {"response": f"ERROR: Failed to send input: {str(e)}"})
 
 @socketio.on('stop')
 def stop_all_commands(_):
     """Stop all running commands and their child processes."""
-    if not processes:
-        socketio.emit("output", {"response": "No running commands to stop."})
-        return
+    with process_lock:
+        if not processes:
+            socketio.emit("output", {"response": "No running commands to stop."})
+            return
 
-    stopped_count = 0
+        stopped_count = 0
 
-    for session_id, process in list(processes.items()):  # Use list() to avoid modification issues
-        try:
-            # Terminate all child processes first
-            parent = psutil.Process(process.pid)
-            children = parent.children(recursive=True)
+        for session_id, process in list(processes.items()):  # Avoid modification issues
+            try:
+                parent = psutil.Process(process.pid)
+                children = parent.children(recursive=True)
 
-            for child in children:
-                child.terminate()
+                for child in children:
+                    child.terminate()
 
-            _, still_alive = psutil.wait_procs(children, timeout=3)
-            for child in still_alive:
-                child.kill()  # Force kill if needed
-
-            # Now stop the main process
-            if process.poll() is None:  # If still running
-                process.terminate()
-                process.wait(timeout=3)
+                _, still_alive = psutil.wait_procs(children, timeout=3)
+                for child in still_alive:
+                    child.kill()
 
                 if process.poll() is None:
-                    process.kill()
+                    process.terminate()
+                    process.wait(timeout=3)
 
-            del processes[session_id]  # Remove from tracking
-            stopped_count += 1
-        except Exception as e:
-            socketio.emit("output", {"response": f"Error stopping process {session_id}: {str(e)}"})
+                    if process.poll() is None:
+                        process.kill()
 
-    socketio.emit("output", {"response": f"Stopped {stopped_count} running command(s)."})
+                del processes[session_id]
+                stopped_count += 1
+            except Exception as e:
+                socketio.emit("output", {"response": f"Error stopping process {session_id}: {str(e)}"})
+                log_message(f"Error stopping process {session_id}: {str(e)}")
+
+        socketio.emit("output", {"response": f"Stopped {stopped_count} running command(s)."})
+
+@socketio.on('recover_processes')
+def recover_processes():
+    """Attempt to recover running processes on startup."""
+    log_message("Recovering running processes...")
+    with process_lock:
+        active_pids = {p.pid for p in psutil.process_iter(attrs=['pid'])}
+        for sid, process in list(processes.items()):
+            if process.pid not in active_pids:  # Process died
+                log_message(f"Removing dead process {sid}")
+                del processes[sid]
+            else:
+                log_message(f"Process {sid} ({process.pid}) is still running")
+
+@socketio.on('list_processes')
+def list_processes():
+    """Return the list of running processes."""
+    with process_lock:
+        running = {sid: process.pid for sid, process in processes.items() if process.poll() is None}
+        socketio.emit("output", {"response": f"Running processes: {running}"})
 
 @app.route('/files', methods=['GET'])
 def list_files():
